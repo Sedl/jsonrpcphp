@@ -3,6 +3,7 @@
                     COPYRIGHT
 
 Copyright 2007 Sergio Vaccaro <sergio@inservibile.org>
+Copyright 2013 Stephan Sedlmeier <stephan@defectivebyte.com>
 
 This file is part of JSON-RPC PHP.
 
@@ -47,7 +48,7 @@ class jsonRPCClient {
      *
      * @var integer
      */
-    private $id;
+    public $id;
     /**
      * If true, notifications are performed instead of requests
      *
@@ -55,13 +56,17 @@ class jsonRPCClient {
      */
     private $notification = false;
 
+    public $pythonic = false;
+
+    private $version;
+
     /**
      * Takes the connection parameters
      *
      * @param string $url
      * @param boolean $debug
      */
-    public function __construct($url,$debug = false) {
+    public function __construct($url, $debug = false, $version = 2) {
         // server URL
         $this->url = $url;
         // proxy
@@ -70,6 +75,8 @@ class jsonRPCClient {
         empty($debug) ? $this->debug = false : $this->debug = true;
         // message id
         $this->id = 1;
+
+        $this->version = $version;
     }
 
     /**
@@ -91,19 +98,18 @@ class jsonRPCClient {
      * @param array $params
      * @return array
      */
-    public function __call($method,$params) {
+
+    public function call($method, $args=NULL, $kwargs=NULL) {
+
+        if ($this->pythonic) {
+            $params = array($args, $kwargs);
+        } else {
+            $params = $args;
+        }
 
         // check
         if (!is_scalar($method)) {
             throw new Exception('Method name has no scalar value');
-        }
-
-        // check
-        if (is_array($params)) {
-            // no keys
-            $params = array_values($params);
-        } else {
-            throw new Exception('Params must be given as array');
         }
 
         // sets notification or request task
@@ -119,26 +125,31 @@ class jsonRPCClient {
                         'params' => $params,
                         'id' => $currentId
                         );
+
+        if ($this->version == 2) {
+            $request['jsonrpc'] = '2.0';
+        }
+
         $request = json_encode($request);
         $this->debug && $this->debug.='***** Request *****'."\n".$request."\n".'***** End Of request *****'."\n\n";
 
-        // performs the HTTP POST
-        $opts = array ('http' => array (
-                            'method'  => 'POST',
-                            'header'  => 'Content-type: application/json',
-                            'content' => $request
-                            ));
-        $context  = stream_context_create($opts);
-        if ($fp = fopen($this->url, 'r', false, $context)) {
-            $response = '';
-            while($row = fgets($fp)) {
-                $response.= trim($row)."\n";
-            }
-            $this->debug && $this->debug.='***** Server response *****'."\n".$response.'***** End of server response *****'."\n";
-            $response = json_decode($response,true);
-        } else {
-            throw new Exception('Unable to connect to '.$this->url);
+        $curl = curl_init($this->url);
+        $copts = array(
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER => array('Content-type: application/json') ,
+            CURLOPT_POSTFIELDS => $request
+        );
+        curl_setopt_array($curl, $copts);
+        $result = curl_exec($curl);
+        $cerr = curl_errno($curl);
+        if ($cerr != 0) {
+            curl_close($curl);
+            throw new Exception('cURL error: ' . curl_error($curl));
         }
+        curl_close($curl);
+
+        $response = json_decode($result, true);
 
         // debug output
         if ($this->debug) {
@@ -152,7 +163,12 @@ class jsonRPCClient {
                 throw new Exception('Incorrect response id (request id: '.$currentId.', response id: '.$response['id'].')');
             }
             if (!is_null($response['error'])) {
-                throw new Exception('Request error: '.$response['error']);
+                if (array_key_exists('message', $response['error'])) {
+                    $msg = $response['error']['message'];
+                } else {
+                    $msg = $response['error'];
+                }
+                throw new Exception('Request error, peer says: ' . $msg);
             }
 
             return $response['result'];
@@ -160,5 +176,9 @@ class jsonRPCClient {
         } else {
             return true;
         }
+    }
+
+    public function __call($method, $params) {
+        return $this->call($method, $params);
     }
 }
