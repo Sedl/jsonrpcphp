@@ -26,6 +26,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  * The object of this class are generic jsonRPC 1.0 clients
  * http://json-rpc.org/wiki/specification
  *
+ * You can find more recent version of this file here:
+ * https://github.com/Sedl/jsonrpcphp/blob/master/includes/jsonRPCClient.php
+ *
  * @author sergio <jsonrpcphp@inservibile.org>
  */
 class jsonRPCClient {
