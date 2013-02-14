@@ -131,6 +131,11 @@ class jsonRPCClient {
         }
 
         $request = json_encode($request);
+
+        if ($this->debug) {
+            echo $request . "\n";
+        }
+
         $this->debug && $this->debug.='***** Request *****'."\n".$request."\n".'***** End Of request *****'."\n\n";
 
         $curl = curl_init($this->url);
@@ -142,18 +147,26 @@ class jsonRPCClient {
         );
         curl_setopt_array($curl, $copts);
         $result = curl_exec($curl);
+
         $cerr = curl_errno($curl);
         if ($cerr != 0) {
             curl_close($curl);
             throw new Exception('cURL error: ' . curl_error($curl));
         }
+
+        $cinfo = curl_getinfo($curl);
+        $http_code = $cinfo['http_code'];
+        if (! (($http_code >= 200) and ($http_code <= 299))) {
+            throw new Exception('HTTP remote end returned non 2xx status code: ' . $http_code);
+        }
+
         curl_close($curl);
 
-        $response = json_decode($result, true);
+        // decoding and handling from here
 
-        // debug output
-        if ($this->debug) {
-            echo nl2br($debug);
+        $response = json_decode($result, true);
+        if ($response === NULL) {
+            throw new Exception('Error decoding JSON string');
         }
 
         // final checks and return
@@ -162,7 +175,8 @@ class jsonRPCClient {
             if ($response['id'] != $currentId) {
                 throw new Exception('Incorrect response id (request id: '.$currentId.', response id: '.$response['id'].')');
             }
-            if (!is_null($response['error'])) {
+
+            if (array_key_exists('error', $response) and ! (is_null($response['error']))) {
                 if (array_key_exists('message', $response['error'])) {
                     $msg = $response['error']['message'];
                 } else {
